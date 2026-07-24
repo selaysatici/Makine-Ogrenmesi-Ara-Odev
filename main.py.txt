@@ -1,0 +1,111 @@
+"""
+===============================================================================
+MAKİNE ÖĞRENMESİ ARA ÖDEVİ: MÜŞTERİ AYRILMA (CHURN) TAHMİNİ
+===============================================================================
+
+Amaç:
+    Bu projede, sentetik olarak oluşturulan müşteri verisi üzerinde temel makine 
+    öğrenmesi adımları (veri ön işleme, öznitelik mühendisliği, model eğitimi ve 
+    değerlendirme) uygulanarak müşterilerin ayrılma (churn) durumu tahmin edilmiştir.
+
+Kullanılan Kütüphaneler:
+    - pandas & numpy: Veri işleme ve manipülasyon
+    - scikit-learn: Veri ölçekleme, kodlama, model eğitimi ve değerlendirme metrikleri
+
+Çalıştırma Adımları:
+    1. Gerekli kütüphaneleri yükleyin: pip install pandas numpy scikit-learn
+    2. Betiği çalıştırın: python main.py
+===============================================================================
+"""
+
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+
+def main():
+    print("=== 1. VERİ SETİ OLUSTRUMA VE İNCELEME ===")
+    np.random.seed(42)
+    n_samples = 150
+
+    data = {
+        'yas': np.random.randint(18, 65, size=n_samples),
+        'gelir': np.random.randint(30000, 120000, size=n_samples),
+        'abonelik_suresi': np.random.randint(1, 60, size=n_samples),
+        'destek_talebi_sayisi': np.random.randint(0, 10, size=n_samples),
+        'sehir': np.random.choice(['Istanbul', 'Ankara', 'Izmir', 'Bursa'], size=n_samples),
+        'uyelik_tipi': np.random.choice(['Standart', 'Premium', 'Gold'], size=n_samples),
+        'churn': np.random.choice([0, 1], size=n_samples, p=[0.7, 0.3])
+    }
+
+    df = pd.DataFrame(data)
+    df.loc[5, 'gelir'] = np.nan
+    df.loc[12, 'destek_talebi_sayisi'] = np.nan
+
+    print("\n--- Veri Setinin İlk 5 Satırı ---")
+    print(df.head())
+
+    print("\n=== 2. EKSİK DEĞER KONTROLÜ VE TEMİZLİK ===")
+    df['gelir'] = df['gelir'].fillna(df['gelir'].median())
+    df['destek_talebi_sayisi'] = df['destek_talebi_sayisi'].fillna(df['destek_talebi_sayisi'].median())
+
+    print("\n=== 3. ÖZNİTELİK ÜRETİMİ ===")
+    df['destek_talebi_var_mi'] = (df['destek_talebi_sayisi'] > 0).astype(int)
+    df['abonelik_yili'] = (df['abonelik_suresi'] / 12).round(1)
+
+    print("\n=== 4. VERİYİ BÖLME ===")
+    X = df.drop(columns=['churn'])
+    y = df['churn']
+
+    X_temp, X_test, y_temp, y_test = train_test_split(
+        X, y, test_size=0.30, random_state=42, stratify=y
+    )
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_temp, y_temp, test_size=0.50, random_state=42, stratify=y_temp
+    )
+
+    print("\n=== 5. ÖN İŞLEME VE MODEL EĞİTİMİ ===")
+    numeric_features = ['yas', 'gelir', 'abonelik_suresi', 'destek_talebi_sayisi', 'abonelik_yili']
+    categorical_features = ['sehir', 'uyelik_tipi']
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', StandardScaler(), numeric_features),
+            ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), categorical_features)
+        ],
+        remainder='passthrough'
+    )
+
+    models = {
+        'Logistic Regression': LogisticRegression(random_state=42),
+        'K-Nearest Neighbors (KNN)': KNeighborsClassifier(n_neighbors=5),
+        'Decision Tree (Bonus)': DecisionTreeClassifier(random_state=42, max_depth=3)
+    }
+
+    val_results = {}
+    for name, model in models.items():
+        clf = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', model)])
+        clf.fit(X_train, y_train)
+        y_val_pred = clf.predict(X_val)
+        acc = accuracy_score(y_val, y_val_pred)
+        f1 = f1_score(y_val, y_val_pred, zero_division=0)
+        val_results[name] = {'pipeline': clf, 'accuracy': acc, 'f1_score': f1}
+        print(f"-> {name} | Validation F1-Score: {f1:.4f}")
+
+    best_model_name = max(val_results, key=lambda k: val_results[k]['f1_score'])
+    best_pipeline = val_results[best_model_name]['pipeline']
+
+    print(f"\n=== 6. TEST SONUÇLARI ({best_model_name}) ===")
+    y_test_pred = best_pipeline.predict(X_test)
+    print("Accuracy :", accuracy_score(y_test, y_test_pred))
+    print("F1-Score :", f1_score(y_test, y_test_pred, zero_division=0))
+    print("Confusion Matrix:\n", confusion_matrix(y_test, y_test_pred))
+
+if __name__ == "__main__":
+    main()
